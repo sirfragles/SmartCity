@@ -21,6 +21,13 @@
 /* ################################################################ */
 
 /* ################################################################ */
+/* ############### LoRa connection on Feather M0 ################## */
+/* ################################################################ */
+/* # Connect io1, and io2 to 2 different digital ports, and       # */
+/* # define PIN_CONNECT_TO_IO1 and PIN_CONNECT_TO_IO2             # */
+/* ################################################################ */
+
+/* ################################################################ */
 /* ####################### Libraries ############################## */
 /* ################################################################ */
 /* Libraries for the OLED display in SPI mode */
@@ -41,14 +48,18 @@
 /* ################################################################ */
 /* ########################## Define ############################## */
 /* ################################################################ */
+/* for LORA connection */
+#define PIN_CONNECT_TO_IO1 6
+#define PIN_CONNECT_TO_IO2 5
+
 /* Declaration for the OLED display using software SPI */
 #define OLED_WIDTH 128 // pixels
 #define OLED_HEIGHT 32 // in pixels
 #define OLED_MOSI 20
 #define OLED_CLK 21
-#define OLED_DC 12
-#define OLED_CS 19
-#define OLED_RESET 13
+#define OLED_DC 10
+#define OLED_CS 11
+#define OLED_RESET 9
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT,
 						 OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
 
@@ -56,18 +67,21 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT,
 #define FLAME_SIG A0
 
 /* for DHT11 */
-#define DHT_DATA 5
+#define DHT_DATA 15	// label A1
 #define DHTTYPE DHT11
 
-/* for HC-SR04 */
-#define ULTRA_TRIG 9
-#define ULTRA_ECHO 10
+/* for HC-SR04 - left */
+#define ULTRA_TRIG_L 16	// label A2
+#define ULTRA_ECHO_L 17	// label A3
+/* for HC-SR04 - right */
+#define ULTRA_TRIG_R 12
+#define ULTRA_ECHO_R 13
 
-/* for Ultrasonic - level */
-#define LVL_FULL 5
-#define LVL_HIGH 15
-#define LVL_MEDIDUM 30
-#define BIN_HIGH 40
+/* BIN level settings */
+#define LVL_FULL 5	 // FULL limit
+#define LVL_HIGH 15	// HIGH limit
+#define LVL_MEDIDUM 30 // MEDIUM limit
+#define BIN_HIGH 40	// Height of the bin
 
 /* for mini microswitch */
 #define SWITCH_PIN 15
@@ -95,13 +109,7 @@ const lmic_pinmap lmic_pins = {
 	.nss = 8,
 	.rxtx = LMIC_UNUSED_PIN,
 	.rst = 4,
-	.dio = {3, 6, 5} // change 11 to 5
-	/* Change in connection
-		pin IO1 connect to pin 6
-		pin IO2 connect to pin 5
-	*/
-//	.dio = {3, 6, 11},
-};
+	.dio = {3, PIN_CONNECT_TO_IO1, PIN_CONNECT_TO_IO2}};
 
 /* Global variables of OLED display */
 char OLED_String[85]; // OLED size 21x4 = 84 + '\0'(in characters)
@@ -122,9 +130,11 @@ char flame_temp_Str_2[] = "On Fire!";
 DHT dht(DHT_DATA, DHTTYPE);
 float DHT_temp = 0, DHT_humi = 0;
 
-/* Global variables for Ultrasonic sensor */
-long ultra_duration;
-int ultra_distance;
+/* Global variables for Ultrasonic sensors */
+long ultra_duration_L = 0;
+int ultra_distance_L = 0;
+long ultra_duration_R = 0;
+int ultra_distance_R = 0;
 char ultra_temp_Str_1[] = "LOW   ";
 char ultra_temp_Str_2[] = "MEDIUM";
 char ultra_temp_Str_3[] = "HIGH  ";
@@ -184,14 +194,17 @@ void constructStr(char *lvl, char *flame, char *humi, char *state, char *temp)
 void miniswitch(void)
 {
 	switchState = digitalRead(SWITCH_PIN);
-	if(switchState == HIGH)
+	if (switchState == HIGH)
 	{
-		for(int i = 0; i < sizeof(state_Str); i++) state_Str[i] = state_temp_Str1[i];
+		for (int i = 0; i < sizeof(state_Str); i++)
+			state_Str[i] = state_temp_Str1[i];
 	}
 	else
 	{
-		for(int i = 0; i < sizeof(state_Str); i++) state_Str[i] = state_temp_Str2[i];
+		for (int i = 0; i < sizeof(state_Str); i++)
+			state_Str[i] = state_temp_Str2[i];
 	}
+	Serial.println(state_Str);
 }
 
 /* ##################### Flame sensor's KY-026 #################### */
@@ -215,6 +228,7 @@ void flameKY026(void)
 			flame_Str[i] = flame_temp_Str_2[i];
 		}
 	}
+	Serial.print("Flame detector: ");
 	Serial.println(flame_Str);
 }
 
@@ -246,58 +260,71 @@ void dht11(void)
 /* ###################### Ultrasonic HC-SR04 ###################### */
 void ultrasonic(void)
 {
-	// Reset ULTRA_TRIG pin
-	digitalWrite(ULTRA_TRIG, LOW);
+	// Reset ULTRA_TRIG_L pin
+	digitalWrite(ULTRA_TRIG_L, LOW);
+	digitalWrite(ULTRA_TRIG_R, LOW);
 	delayMicroseconds(5);
 
-	// Set ULTRA_TRIG pin HIGH 10 us
-	digitalWrite(ULTRA_TRIG, HIGH);
+	// Set ULTRA_TRIG_L pin HIGH 10 us
+	digitalWrite(ULTRA_TRIG_L, HIGH);
+	digitalWrite(ULTRA_TRIG_R, HIGH);
 	delayMicroseconds(10);
-	digitalWrite(ULTRA_TRIG, LOW);
+	digitalWrite(ULTRA_TRIG_L, LOW);
+	digitalWrite(ULTRA_TRIG_R, LOW);
 
 	/*
    * Read ultro_echo pin (pulseIn() returns the length of the pulse in micro sec)
    * the length of the pulse = time the ultrasonic travel from the sensor 
    * to a object and come back to the sensor
    */
-	ultra_duration = pulseIn(ULTRA_ECHO, HIGH);
-	/* constrain the input, HC-SR04 range = 2cm-400cm = ~120 - 23530*/
-	ultra_duration = constrain(ultra_duration, 120, 23530);
+	ultra_duration_L = pulseIn(ULTRA_ECHO_L, HIGH);
+	ultra_duration_R = pulseIn(ULTRA_ECHO_R, HIGH);
+	/* constrain the input, HC-SR04 range = 2cm-400cm = 120us - 23530us*/
+	ultra_duration_L = constrain(ultra_duration_L, 120, 23530);
+	ultra_duration_R = constrain(ultra_duration_R, 120, 23530);
 
 	/* 
    *  Convert the length of the pulse to distance (cm)
    *  Speed of sound = 340m/s = 0.00034m/us = 0.034cm/us
-   *  ultra_distance = (ultra_duration/2) * 0.034
+   *  ultra_distance_L = (ultra_duration_L/2) * 0.034
   */
-	ultra_distance = ultra_duration * 0.034 / 2;
-	ultra_distance = constrain(ultra_distance, 0, BIN_HIGH);
+	ultra_distance_L = ultra_duration_L * 0.034 / 2;
+	ultra_distance_L = constrain(ultra_distance_L, 0, BIN_HIGH);
+	ultra_distance_R = ultra_duration_R * 0.034 / 2;
+	ultra_distance_R = constrain(ultra_distance_R, 0, BIN_HIGH);
 
+	int ultra_compare = 0;
+	ultra_compare = (ultra_distance_L > ultra_distance_R) ? ultra_distance_L : ultra_distance_R;
 	/* Update ultra_Str */
-	if (ultra_distance <= LVL_FULL)
+	if (ultra_compare <= LVL_FULL)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_4[i];
 	}
-	else if (ultra_distance <= LVL_HIGH)
+	else if (ultra_compare <= LVL_HIGH)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_3[i];
 	}
-	else if (ultra_distance <= LVL_MEDIDUM)
+	else if (ultra_compare <= LVL_MEDIDUM)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_2[i];
 	}
-	else if (ultra_distance <= BIN_HIGH)
+	else if (ultra_compare <= BIN_HIGH)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_1[i];
 	}
 
 	// Display distance on Serial Monitor
-	Serial.print("Distance: ");
-	Serial.print(ultra_distance);
+	Serial.print("Distance Left: ");
+	Serial.print(ultra_distance_L);
 	Serial.println(" cm");
+	Serial.print("Distance Right: ");
+	Serial.print(ultra_distance_R);
+	Serial.println(" cm");
+	Serial.print("Level: ");
 	Serial.println(ultra_Str);
 }
 
@@ -381,8 +408,7 @@ void do_send(osjob_t *j)
 	{
 
 		String temporary = "";
-		temporary = String(ultra_Str) + String('|') + String(flame_Str) + String('|') + String(humi_Str) 
-					+ String('|') + String(state_Str) + String('|') + String(temp_Str) + String(' ');
+		temporary = String(ultra_Str) + String('|') + String(flame_Str) + String('|') + String(humi_Str) + String('|') + String(state_Str) + String('|') + String(temp_Str) + String(' ');
 		temporary.toCharArray((char *)mydata, temporary.length());
 		// Prepare upstream data transmission at the next possible time.
 		LMIC_setTxData2(1, mydata, sizeof(mydata), 0);
@@ -416,10 +442,11 @@ void setup()
 	pinMode(DHT_DATA, INPUT); // set DHT_humi_dataPin pin as input
 
 	/* ##################### Set up for HC-SR04 sensor ################ */
-	pinMode(ULTRA_TRIG, OUTPUT); // set ULTRA_TRIG pin as output
-	pinMode(ULTRA_ECHO, INPUT);  // set ulstra_echo pin as input
-
-	/* ################### Set up for LoRa connection ################# */
+	pinMode(ULTRA_TRIG_L, OUTPUT); // set ULTRA_TRIG_L pin as output
+	pinMode(ULTRA_ECHO_L, INPUT);  // set ULTRA_ECHO_L pin as input
+	pinMode(ULTRA_TRIG_R, OUTPUT); // set ULTRA_TRIG_R pin as output
+	pinMode(ULTRA_ECHO_R, INPUT);  // set ULTRA_ECHO_R pin as input
+								   /* ################### Set up for LoRa connection ################# */
 
 #ifdef VCC_ENABLE
 	pinMode(VCC_ENABLE, OUTPUT);
@@ -437,7 +464,7 @@ void setup()
 	by joining the network, precomputed session parameters are be provided.
 */
 #ifdef PROGMEM
-/*
+	/*
 	On AVR, these values are stored in flash and only copied to RAM
 	once. Copy them to a temporary buffer here, LMIC_setSession will
 	copy them into a buffer of its own again.
@@ -453,7 +480,7 @@ void setup()
 #endif
 
 #if defined(CFG_eu868)
-/*
+	/*
 	Set up the channels used by the Things Network, which corresponds
 	to the defaults of most gateways. Without this, only three base
 	channels from the LoRaWAN specification are used, which certainly
@@ -480,7 +507,7 @@ void setup()
 	frequency is not configured here.
 */
 #elif defined(CFG_us915)
-/*
+	/*
 	NA-US channels 0-71 are configured automatically
 	but only one group of 8 should (a subband) should be active
 	TTN recommends the second sub band, 1 in a zero based count.
@@ -512,10 +539,15 @@ void loop()
 	{
 		display.clearDisplay();
 		flameKY026();
+		Serial.println("---------");
 		dht11();
+		Serial.println("---------");
 		ultrasonic();
+		Serial.println("---------");
 		miniswitch();
+		Serial.println("#########");
 		constructStr(ultra_Str, flame_Str, humi_Str, state_Str, temp_Str);
 		displayData();
 	}
 }
+
