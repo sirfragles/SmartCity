@@ -73,9 +73,7 @@ Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT,
 /* for HC-SR04 - left */
 #define ULTRA_TRIG_L 16	// label A2
 #define ULTRA_ECHO_L 17	// label A3
-/* for HC-SR04 - right */
-#define ULTRA_TRIG_R 12
-#define ULTRA_ECHO_R 13
+
 
 /* BIN level settings */
 #define LVL_FULL 5	 // FULL limit
@@ -262,15 +260,12 @@ void ultrasonic(void)
 {
 	// Reset ULTRA_TRIG_L pin
 	digitalWrite(ULTRA_TRIG_L, LOW);
-	digitalWrite(ULTRA_TRIG_R, LOW);
 	delayMicroseconds(5);
 
 	// Set ULTRA_TRIG_L pin HIGH 10 us
 	digitalWrite(ULTRA_TRIG_L, HIGH);
-	digitalWrite(ULTRA_TRIG_R, HIGH);
 	delayMicroseconds(10);
 	digitalWrite(ULTRA_TRIG_L, LOW);
-	digitalWrite(ULTRA_TRIG_R, LOW);
 
 	/*
    * Read ultro_echo pin (pulseIn() returns the length of the pulse in micro sec)
@@ -278,10 +273,8 @@ void ultrasonic(void)
    * to a object and come back to the sensor
    */
 	ultra_duration_L = pulseIn(ULTRA_ECHO_L, HIGH);
-	ultra_duration_R = pulseIn(ULTRA_ECHO_R, HIGH);
 	/* constrain the input, HC-SR04 range = 2cm-400cm = 120us - 23530us*/
 	ultra_duration_L = constrain(ultra_duration_L, 120, 23530);
-	ultra_duration_R = constrain(ultra_duration_R, 120, 23530);
 
 	/* 
    *  Convert the length of the pulse to distance (cm)
@@ -290,39 +283,32 @@ void ultrasonic(void)
   */
 	ultra_distance_L = ultra_duration_L * 0.034 / 2;
 	ultra_distance_L = constrain(ultra_distance_L, 0, BIN_HIGH);
-	ultra_distance_R = ultra_duration_R * 0.034 / 2;
-	ultra_distance_R = constrain(ultra_distance_R, 0, BIN_HIGH);
 
-	int ultra_compare = 0;
-	ultra_compare = (ultra_distance_L > ultra_distance_R) ? ultra_distance_L : ultra_distance_R;
 	/* Update ultra_Str */
-	if (ultra_compare <= LVL_FULL)
+	if (ultra_distance_L <= LVL_FULL)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_4[i];
 	}
-	else if (ultra_compare <= LVL_HIGH)
+	else if (ultra_distance_L <= LVL_HIGH)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_3[i];
 	}
-	else if (ultra_compare <= LVL_MEDIDUM)
+	else if (ultra_distance_L <= LVL_MEDIDUM)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_2[i];
 	}
-	else if (ultra_compare <= BIN_HIGH)
+	else if (ultra_distance_L <= BIN_HIGH)
 	{
 		for (int i = 0; i < 6; i++)
 			ultra_Str[i] = ultra_temp_Str_1[i];
 	}
 
 	// Display distance on Serial Monitor
-	Serial.print("Distance Left: ");
+	Serial.print("Distance: ");
 	Serial.print(ultra_distance_L);
-	Serial.println(" cm");
-	Serial.print("Distance Right: ");
-	Serial.print(ultra_distance_R);
 	Serial.println(" cm");
 	Serial.print("Level: ");
 	Serial.println(ultra_Str);
